@@ -1,2 +1,2 @@
 # OCR_transcription_detection
-Companion code to the paper with DOI xxxxxxxx
+Companion code to the publication with DOI xxxxxxxx
