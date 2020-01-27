@@ -15,6 +15,8 @@ NR_THREADS = 24
 SIGNAL_EVALUATION_RADIUS = 500
 SEQUENCE_EVALUATION_RADIUS = 500
 SEQTK_PATH = '/Users/igtr4848/seqtk/seqtk'
+SEQ_DUMP_DIR = '/scratch/Shares/dowell/itripodi/ATAC/peak_sequences'
+OUTDIR = '/scratch/Shares/dowell/itripodi/ATAC/features'
 
 parser = argparse.ArgumentParser(description='This script gathers all features that can be used to classify ATAC-seq peaks')
 parser.add_argument('-x', '--prefix', dest='prefix', help='Custom prefix for all output files')
@@ -25,12 +27,13 @@ parser.add_argument('-r', '--refseq-annotations', dest='refseq_annotations', hel
 parser.add_argument('-s', '--skip-seq-caching', dest='skip_sequence_caching', help='Skip the caching of peak sequences if this has already been processed.', required=False, action='store_true')
 args = parser.parse_args()  # /scratch/Shares/dowell/nascent/hg38/hg38_refseq.bed
 
+
 atac_peak_df = pd.read_csv(args.atac_peaks, header=None, \
                            sep="\t", na_filter=False, \
-                           usecols=[0, 1, 2, 3], \
+                           usecols=[0, 1, 2, 10], \
                            names=['chrom', 'start', 'end', 'ovlp_txn'], \
                            dtype={'chrom':'str', 'start':'int', \
-                                  'end':'int', 'ovlp_txn':'float'} )
+                                  'end':'int', 'ovlp_txn':'int'} )
 
 atac_bed_df = pd.read_csv(args.atac_bedgraph, header=None, \
                            sep="\t", na_filter=False, \
@@ -99,10 +102,14 @@ def get_atac_features(current_chrom):
             print("Could not find sequence information for peak %s:%s-%s ... skipping peak" % (current_chrom, peak.start, peak.end))
             continue
 
+        overlaps_nascent_txn = 0
+        if peak.ovlp_txn > 0:
+            overlaps_nascent_txn = 1
+
         chrom_features.append(  { 'chrom': current_chrom, \
                                   'start': peak.start, \
                                   'end': peak.end, \
-                                  'mean_nr_nascent_reads': peak.ovlp_txn, \
+                                  'ovlp_txn': overlaps_nascent_txn, \
                                   'prom_ovlp': promoter_overlaps, \
                                   'width': peak_width, \
                                   'mean_nr_reads': np.mean(peak_window_reads), \
@@ -134,13 +141,13 @@ if __name__=='__main__':
                     'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', \
                     'chrX', 'chrY']
 
+    atac_peaks_file = args.atac_peaks.split('/')[-1].split('.')[0]
     if args.skip_sequence_caching:  # don't waste cycles if this has already been cached
-        seq_df = pd.read_pickle('/scratch/Users/igtr4848/peak_sequences/%s_seq_pandas_dataframe.pickle' % atac_peaks_file)
+        seq_df = pd.read_pickle('%s/%s_seq_pandas_dataframe.pickle' % (SEQ_DUMP_DIR, atac_peaks_file))
     else:
         print('Gathering the actual sequence overlapping each peak:')
-        atac_peaks_file = args.atac_peaks.split('/')[-1].split('.')[0]
         # Generate a temp bed file with fixed windows for each peak
-        tmp_peaks_filename = '/scratch/Users/igtr4848/peak_sequences/%s_tmp_fixed_peak_windows.bed' % atac_peaks_file
+        tmp_peaks_filename = '%s/%s_tmp_fixed_peak_windows.bed' % (SEQ_DUMP_DIR, atac_peaks_file)
         with open(tmp_peaks_filename, 'w') as tmp_peaks:
             for peak in atac_peak_df.itertuples():
                 if peak.chrom in CHROMOSOMES:
@@ -149,8 +156,8 @@ if __name__=='__main__':
                                                       peak_midpoint - SEQUENCE_EVALUATION_RADIUS, \
                                                       peak_midpoint + SEQUENCE_EVALUATION_RADIUS))
         # Gather the sequence for all those fixed-width regions
-        sequence = os.popen('%s subseq %s %s > /scratch/Users/igtr4848/peak_sequences/%s.fa' % (SEQTK_PATH, args.genome_fasta, tmp_peaks_filename, atac_peaks_file)).read()
-        fasta_sequences = SeqIO.parse(open('/scratch/Users/igtr4848/peak_sequences/%s.fa' % atac_peaks_file),'fasta')
+        sequence = os.popen('%s subseq %s %s > %s/%s.fa' % (SEQTK_PATH, args.genome_fasta, tmp_peaks_filename, SEQ_DUMP_DIR, atac_peaks_file)).read()
+        fasta_sequences = SeqIO.parse(open('%s/%s.fa' % (SEQ_DUMP_DIR, atac_peaks_file)),'fasta')
         # Create a dataframe to access these more efficiently
         seq_df = df_empty(['chrom', 'start', 'end', 'seq'], [np.str, np.int, np.int, np.str])
         for seq in fasta_sequences:
@@ -166,7 +173,7 @@ if __name__=='__main__':
                 print(e)
                 raise
 
-        seq_df.to_pickle('/scratch/Users/igtr4848/peak_sequences/%s_seq_pandas_dataframe.pickle' % atac_peaks_file)
+        seq_df.to_pickle('%s/%s_seq_pandas_dataframe.pickle' % (SEQ_DUMP_DIR, atac_peaks_file))
 
     pool = multiprocessing.Pool(NR_THREADS)
     X_and_y_train = pool.map(get_atac_features, CHROMOSOMES)
@@ -176,8 +183,8 @@ if __name__=='__main__':
     data = [j for sub in X_and_y_train for j in sub]
     data = pd.DataFrame(data)
     data['signal_features'] = data['signal_features'].map(lambda x: x.astype('float32'))
-    data['mean_nr_nascent_reads'] = data['mean_nr_nascent_reads'].astype('float32')
+    data['ovlp_txn'] = data['ovlp_txn'].astype('int')
     data['mean_nr_reads'] = data['mean_nr_reads'].astype('float32')
     data['gc_ratio'] = data['gc_ratio'].astype('float32')
-    data.to_pickle('/scratch/Users/igtr4848/atac_peak_features/%s_from-raw-nascent-reads.pk' % args.prefix)
+    data.to_pickle('%s/%s_from-fstitchtfit.pk' % (OUTDIR, args.prefix))
 

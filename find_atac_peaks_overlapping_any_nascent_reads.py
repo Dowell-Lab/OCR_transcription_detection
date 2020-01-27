@@ -10,7 +10,6 @@ import multiprocessing
 
 import matplotlib as mpl 
 
-# to prevent display weirdness when running in Pando:
 mpl.use('Agg')
 import matplotlib.pyplot as plt 
 plt.ioff()
@@ -61,15 +60,8 @@ def get_nascent_coverage_for_peaks(current_chrom):
                 peak_window_reads[position] = abs(coverage.reads)
 
         mean_nr_reads = np.mean(peak_window_reads)
-#        if (mean_nr_reads < 0.1):
-#            nascent_coverage.append(mean_nr_reads)
-        #has_transcription = 0
-        #if (mean_nr_reads > args.min_read_threshold):
-        #    has_transcription = 1
-        #peaks_with_nascent.append([peak.chrom, peak.start, peak.end, has_transcription])
         peaks_with_nascent.append([peak.chrom, peak.start, peak.end, mean_nr_reads])
 
-#    return(nascent_coverage)
     return(peaks_with_nascent)
 
 
@@ -86,19 +78,8 @@ if __name__=='__main__':
     pool.join()
 
     with open("%s_ovlp-nascent.bed" % args.atac_peaks, 'w') as filtered_peaks:
-        #for peak in np.concatenate(results[:,1]):
-        #print(results)
         for chrom in results:
             for peak in chrom:
                 if len(peak) > 0:
                     filtered_peaks.write("%s\t%s\t%s\t%s\n" % (peak[0], peak[1], peak[2], peak[3]))
-
-#    plt.clf()
-#    fig, ax = plt.subplots()
-#    plt.hist(np.concatenate(results), bins=100)
-#    plt.title('Mean number of ATAC-seq peaks from %s\n overlapping nascent txn reads from %s' % (args.atac_peaks.split('/')[-1], args.nascent_bedgraph.split('/')[-1]))
-#    plt.xlabel('# reads')
-#    plt.ylabel('Count')
-#    plt.tight_layout()
-#    plt.savefig("nascent_transcr_coverage_for_%s_peaks_against_%s.png" % (args.atac_peaks.split('/')[-1], args.nascent_bedgraph.split('/')[-1]), dpi=600)
 

@@ -1,0 +1,127 @@
+Process ATAC-seq samples (to obtain peaks)
+
+Process nascent transcription samples
+
+Normalize by millions mapped
+sbatch normalize_by_millions_mapped.sbatch
+
+sbatch merge_ATAC_by_cell_types.sbatch 
+
+sbatch merge_new_cell_types.sbatch
+
+python3 find_atac_peaks_overlapping_any_nascent_reads.py -p ${CELLTYPEATACPEAKS} -n ${CELLTYPENASCENTBEDGRAPH}
+
+# figure out which OCRs overlap either Fstitch or TFit calls.
+sbatch count_OCR_overlaps_with_nascent.sbatch
+
+python3 get_overlaps.py \
+  -x ${PREFIX}-vs-fstitchtfit \
+  -p /scratch/Shares/dowell/processed_atacseq/macs2/${CELLTYPE}_peaks_clean.broadPeak_ovlp-nascent.bed \
+  -b /scratch/Shares/dowell/processed_atacseq/bedtools/${CELLTYPE}.sorted.mp.BedGraph \
+  -f /scratch/Shares/dowell/nascent/hg38/hg38.fa \
+  -r /scratch/Shares/dowell/nascent/hg38/hg38_refseq.bed
+
+python3 combine_datasets.py 
+
+python3 add_nascent_coverage.py
+
+python3 coverage_histograms.py
+
+cd new_models/results/bed_files
+
+convert +append atac_positives_histogram.png atac_negatives_histogram.png row1.png
+convert +append TP_atac_histogram.png TN_atac_histogram.png row2.png
+convert +append FP_atac_histogram.png FN_atac_histogram.png row3.png
+convert -append row1.png row2.png row3.png fig7-atac_hist.png
+rm row*.png
+
+convert +append nascent_positives_histogram.png nascent_negatives_histogram.png row1.png
+convert +append TP_nascent_histogram.png TN_nascent_histogram.png row2.png
+convert +append FP_nascent_histogram.png FN_nascent_histogram.png row3.png
+convert -append row1.png row2.png row3.png fig9-nascent_hist.png
+rm row*.png
+
+
+cd ../../../
+
+python3 dataset_stats.py 
+
+python3 naive_baseline.py
+python3 atac_vs_nascent_levels_scatter.py
+
+RUN CLASSIFIERS HERE ON EC2 INSTANCE:
+cd new_models
+bash run_all_ec2.sh
+(this sets up the environment and executes python3 new_models/hybrid-RNN-evaluation_ec2.py)
+
+python3 create_tp-fp-tn-fn_bed_files.py
+
+python3 metagene_error_analysis.py
+
+convert +append ATAC_all_positives_metapeak.png ATAC_all_negatives_metapeak.png row1.png
+convert +append ATAC_TP_metapeak.png ATAC_TN_metapeak.png row2.png
+convert +append ATAC_FP_metapeak.png ATAC_FN_metapeak.png row3.png
+convert -append row1.png row2.png row3.png fig8-metapeaks.png
+rm row*.png
+
+cd /home/ignaciot/dowell_lab/rnn_paper_backup/nascent_bg
+for Y in A549 GM12878 H1 HeLa K562 LNCaP MCF7 THP1; do for X in chr1 chr2 chr3 chr4 chr5 chr6 chr7 chr8 chr9 chr10 chr11 chr12 chr13 chr14 chr15 chr16 chr17 chr18 chr19 chr20 chr21 chr22 chrX chrY; do grep "$X\s" $Y.pos.merged.clean.sorted.bedGraph > $Y.$X.pos.merged.clean.sorted.bedGraph; grep "$X\s" $Y.neg.merged.clean.sorted.bedGraph > $Y.$X.neg.merged.clean.sorted.bedGraph; done; done
+
+cd ../../fiji_ATAC-TF-detector
+
+bash find_common_peaks_to_all_datasets2.sh
+
+grep "chr12\s" ../rnn_paper_backup/macs2/common_peaks_to_all_cell_types.bed > ../rnn_paper_backup/macs2/common_peaks_in_test_set.bed
+grep "chr13\s" ../rnn_paper_backup/macs2/common_peaks_to_all_cell_types.bed >> ../rnn_paper_backup/macs2/common_peaks_in_test_set.bed
+grep "chr14\s" ../rnn_paper_backup/macs2/common_peaks_to_all_cell_types.bed >> ../rnn_paper_backup/macs2/common_peaks_in_test_set.bed
+grep "chr15\s" ../rnn_paper_backup/macs2/common_peaks_to_all_cell_types.bed >> ../rnn_paper_backup/macs2/common_peaks_in_test_set.bed
+grep "chr16\s" ../rnn_paper_backup/macs2/common_peaks_to_all_cell_types.bed >> ../rnn_paper_backup/macs2/common_peaks_in_test_set.bed
+grep "chr17\s" ../rnn_paper_backup/macs2/common_peaks_to_all_cell_types.bed >> ../rnn_paper_backup/macs2/common_peaks_in_test_set.bed
+grep "chr18\s" ../rnn_paper_backup/macs2/common_peaks_to_all_cell_types.bed >> ../rnn_paper_backup/macs2/common_peaks_in_test_set.bed
+grep "chr19\s" ../rnn_paper_backup/macs2/common_peaks_to_all_cell_types.bed >> ../rnn_paper_backup/macs2/common_peaks_in_test_set.bed
+grep "chr20\s" ../rnn_paper_backup/macs2/common_peaks_to_all_cell_types.bed >> ../rnn_paper_backup/macs2/common_peaks_in_test_set.bed
+grep "chr21\s" ../rnn_paper_backup/macs2/common_peaks_to_all_cell_types.bed >> ../rnn_paper_backup/macs2/common_peaks_in_test_set.bed
+grep "chr22\s" ../rnn_paper_backup/macs2/common_peaks_to_all_cell_types.bed >> ../rnn_paper_backup/macs2/common_peaks_in_test_set.bed
+grep "chrX\s" ../rnn_paper_backup/macs2/common_peaks_to_all_cell_types.bed >> ../rnn_paper_backup/macs2/common_peaks_in_test_set.bed
+grep "chrY\s" ../rnn_paper_backup/macs2/common_peaks_to_all_cell_types.bed >> ../rnn_paper_backup/macs2/common_peaks_in_test_set.bed
+
+python3 peak_intersection_counts.py
+
+# the arguments for this one are: tp, fp, tn, fn, all_p, all_n
+python3 nascent_metagene_error_analysis.py ${1}
+
+cd new_models/results/bed_files
+
+convert +append multi_allP_nascent_metapeak.png multi_allN_nascent_metapeak.png row1.png
+convert +append multi_TP_nascent_metapeak.png multi_TN_nascent_metapeak.png row2.png
+convert +append multi_FP_nascent_metapeak.png multi_FN_nascent_metapeak.png row3.png
+convert -append row1.png row2.png row3.png fig10-nascent_metapeak.png
+rm row*.png
+
+cd ../../../
+
+python3 plot_multi-ROC.py
+
+convert +append tss_notss_roc_A549.png tss_notss_roc_GM12878.png tss_notss_roc_H1.png tss_notss_roc_row1.png
+convert +append tss_notss_roc_HeLa.png tss_notss_roc_K562.png tss_notss_roc_LNCaP.png tss_notss_roc_row2.png
+convert +append tss_notss_roc_MCF7.png tss_notss_roc_THP1.png tss_notss_roc_row3.png
+convert -append tss_notss_roc_row1.png tss_notss_roc_row2.png tss_notss_roc_row3.png sfig3-tss_notss_roc_per_cell.png
+rm tss_notss_roc_row*
+
+convert +append tss_notss_pr_A549.png tss_notss_pr_GM12878.png tss_notss_pr_H1.png tss_notss_pr_row1.png
+convert +append tss_notss_pr_HeLa.png tss_notss_pr_K562.png tss_notss_pr_LNCaP.png tss_notss_pr_row2.png
+convert +append tss_notss_pr_MCF7.png tss_notss_pr_THP1.png tss_notss_pr_row3.png
+convert -append tss_notss_pr_row1.png tss_notss_pr_row2.png tss_notss_pr_row3.png sfig4-tss_notss_pr_per_cell.png
+rm tss_notss_pr_row*
+
+python3 plot_classification_results.py
+convert +append final_results_auc.png final_results_f1.png row1.png
+convert -append row1.png final_results_time.png fig3-overall_results.png
+rm row1.png
+
+
+convert +append accessibility-vs-txn_coverage_A549.png accessibility-vs-txn_coverage_GM12878.png accessibility-vs-txn_coverage_H1.png row1.png
+convert +append accessibility-vs-txn_coverage_HCT116.png accessibility-vs-txn_coverage_HeLa.png accessibility-vs-txn_coverage_K562.png row2.png
+convert +append accessibility-vs-txn_coverage_LNCaP.png accessibility-vs-txn_coverage_MCF7.png accessibility-vs-txn_coverage_THP1.png row3.png
+convert -append row1.png row2.png row3.png accessibility-vs-txn_coverage_per_cell_type.png
+

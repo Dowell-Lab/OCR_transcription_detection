@@ -8,46 +8,47 @@ mpl.use('Agg')
 import matplotlib.pyplot as plt
 plt.ioff()
 
-
-
-
-DATA_DIR = '/scratch/Users/igtr4848/atac_peak_features'
+DATA_DIR = './new_models/results/bed_files/'
 
 parser = ArgumentParser(description='This script gets all false positives and false negatives and produces a metagene plot for the ATAC-seq and aggregated nascent transcription signal')
 parser.add_argument('-x', '--prefix', dest='prefix', help='Prefix indicating the type of datasets used (histonemarksandtfit, histonemarks, tfitlatest, etc)')
 parser.add_argument('-t', '--type', dest='classif_type', help='Classifier type to gather TP and FP from (RNN-hybrid, attr_AdaBoost, sig_SVM, etc)')
 args = parser.parse_args()
 
-samples = [
-            'gm12878',
-            'h1',
-            'hct116',
-            'k562',
-            'cd4pos',
-            'jurkat',
-            'lncap',
-          ]
 
-data = pd.read_pickle('%s/combined_dataset_union_%s.pkl' % (DATA_DIR, args.prefix))
+chromosomes = [
+    'chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10',
+    'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20',
+    'chr21', 'chr22', 'chrX', 'chrY']
+split_index = 11 # ie. chr12
+test_chroms = chromosomes[split_index:]
 
-positives = data[(data['mean_nr_nascent_reads'] > 0.01)]['signal_features'].values
+data = pd.read_pickle('./combined_dataset_union_fstitchtfit_with_nascent.pkl')
+data = data[(data['chrom'].isin(test_chroms)) & (data['sample'] != 'HCT116')]
+
+mpl.rc('axes', edgecolor='green')
+mpl.rc('xtick', color='green')
+mpl.rc('ytick', color='green')
+positives = data[(data['ovlp_txn'] == 1)]['signal_features'].values
 plt.clf()
-plt.step(list(range(-500,500)), positives.sum(axis=0))
+plt.step(list(range(-500,500)), np.divide(positives.sum(axis=0), len(positives)))
 plt.title('ATAC-seq signal meta-peak from all real positives \n n=%d' % len(positives))
 plt.xlabel('Nucleotide position from midpoint')
-plt.ylabel('Total # normalized reads')
+plt.ylabel('Total normalized number of reads')
+plt.ylim((0,0.22))
 plt.tight_layout()
-plt.savefig("%s/positives_%s_%s_metapeak.png" % (DATA_DIR, args.prefix, args.classif_type), dpi=300)
+plt.savefig("./ATAC_all_positives_metapeak.png", dpi=300)
 del positives
 
-negatives = data[(data['mean_nr_nascent_reads'] < 0.001)]['signal_features'].values
+negatives = data[(data['ovlp_txn'] == 0)]['signal_features'].values
 plt.clf()
-plt.step(list(range(-500,500)), negatives.sum(axis=0))
+plt.step(list(range(-500,500)), np.divide(negatives.sum(axis=0), len(negatives)))
 plt.title('ATAC-seq signal meta-peak from all real negatives \n n=%d' % len(negatives))
 plt.xlabel('Nucleotide position from midpoint')
-plt.ylabel('Total # normalized reads')
+plt.ylabel('Total normalized number of reads')
+plt.ylim((0,0.22))
 plt.tight_layout()
-plt.savefig("%s/negatives_%s_%s_metapeak.png" % (DATA_DIR, args.prefix, args.classif_type), dpi=300)
+plt.savefig("./ATAC_all_negatives_metapeak.png", dpi=300)
 del negatives
 
 tp_atac_signal = []
@@ -55,8 +56,12 @@ fp_atac_signal = []
 tn_atac_signal = []
 fn_atac_signal = []
 
-for sample in samples:
-    tp_file = "%s/%s-vs-rawnascent_RNN-hybrid_true_positives.bed" % (DATA_DIR, sample)
+for sample in data['sample'].unique():
+    if sample == 'HCT116':
+        # used only for validation
+        continue
+
+    tp_file = "%s/%s_RNN-hybrid_true_positives.bed" % (DATA_DIR, sample)
     tp_df = pd.read_csv(tp_file, header=None, \
                         sep="\t", na_filter=False, \
                         usecols=[0, 1, 2], \
@@ -70,7 +75,7 @@ for sample in samples:
         tp_atac_signal = merged['signal_features'].values
 
 
-    fp_file = "%s/%s-vs-rawnascent_RNN-hybrid_false_positives.bed" % (DATA_DIR, sample)
+    fp_file = "%s/%s_RNN-hybrid_false_positives.bed" % (DATA_DIR, sample)
     fp_df = pd.read_csv(fp_file, header=None, \
                         sep="\t", na_filter=False, \
                         usecols=[0, 1, 2], \
@@ -84,7 +89,7 @@ for sample in samples:
         fp_atac_signal = merged['signal_features'].values
 
 
-    tn_file = "%s/%s-vs-rawnascent_RNN-hybrid_true_negatives.bed" % (DATA_DIR, sample)
+    tn_file = "%s/%s_RNN-hybrid_true_negatives.bed" % (DATA_DIR, sample)
     tn_df = pd.read_csv(tn_file, header=None, \
                         sep="\t", na_filter=False, \
                         usecols=[0, 1, 2], \
@@ -98,7 +103,7 @@ for sample in samples:
         tn_atac_signal = merged['signal_features'].values
 
 
-    fn_file = "%s/%s-vs-rawnascent_RNN-hybrid_false_negatives.bed" % (DATA_DIR, sample)
+    fn_file = "%s/%s_RNN-hybrid_false_negatives.bed" % (DATA_DIR, sample)
     fn_df = pd.read_csv(fn_file, header=None, \
                         sep="\t", na_filter=False, \
                         usecols=[0, 1, 2], \
@@ -117,35 +122,46 @@ fp_atac_signal = np.array(fp_atac_signal)
 tn_atac_signal = np.array(tn_atac_signal)
 fn_atac_signal = np.array(fn_atac_signal)
 
+mpl.rc('axes', edgecolor='black')
+mpl.rc('xtick', color='black')
+mpl.rc('ytick', color='black')
 plt.clf()
-plt.step(list(range(-500,500)), tp_atac_signal.sum(axis=0))
-plt.title('ATAC-seq signal meta-peak from all true positives \n n=%d (%s / %s)' % (len(tp_atac_signal), args.prefix, args.classif_type))
+plt.step(list(range(-500,500)), np.divide(tp_atac_signal.sum(axis=0), len(tp_atac_signal)))
+plt.title('ATAC-seq signal meta-peak from all true positives \n n=%d' % len(tp_atac_signal))
 plt.xlabel('Nucleotide position from midpoint')
-plt.ylabel('Total # normalized reads')
+plt.ylabel('Total normalized number of reads')
+plt.ylim((0,0.23))
+plt.text(400, 0.2, "TP", horizontalalignment='left', size='xx-large', color='black', weight='bold')
 plt.tight_layout()
-plt.savefig("%s/TP_%s_%s_metapeak.png" % (DATA_DIR, args.prefix, args.classif_type), dpi=300)
+plt.savefig("./ATAC_TP_metapeak.png", dpi=300)
 
 plt.clf()
-plt.step(list(range(-500,500)), fp_atac_signal.sum(axis=0))
-plt.title('ATAC-seq signal meta-peak from all false positives \n n=%d (%s / %s)' % (len(fp_atac_signal), args.prefix, args.classif_type))
+plt.step(list(range(-500,500)), np.divide(fp_atac_signal.sum(axis=0), len(fp_atac_signal)))
+plt.title('ATAC-seq signal meta-peak from all false positives \n n=%d' % len(fp_atac_signal))
 plt.xlabel('Nucleotide position from midpoint')
-plt.ylabel('Total # normalized reads')
+plt.ylabel('Total normalized number of reads')
+plt.ylim((0,0.23))
+plt.text(400, 0.2, "FP", horizontalalignment='left', size='xx-large', color='black', weight='bold')
 plt.tight_layout()
-plt.savefig("%s/FP_%s_%s_metapeak.png" % (DATA_DIR, args.prefix, args.classif_type), dpi=300)
+plt.savefig("./ATAC_FP_metapeak.png", dpi=300)
 
 plt.clf()
-plt.step(list(range(-500,500)), tn_atac_signal.sum(axis=0))
-plt.title('ATAC-seq signal meta-peak from all true negatives \n n=%d (%s / %s)' % (len(tn_atac_signal), args.prefix, args.classif_type))
+plt.step(list(range(-500,500)), np.divide(tn_atac_signal.sum(axis=0), len(tn_atac_signal)))
+plt.title('ATAC-seq signal meta-peak from all true negatives \n n=%d' % len(tn_atac_signal))
 plt.xlabel('Nucleotide position from midpoint')
-plt.ylabel('Total # normalized reads')
+plt.ylabel('Total normalized number of reads')
+plt.ylim((0,0.23))
+plt.text(400, 0.2, "TN", horizontalalignment='left', size='xx-large', color='black', weight='bold')
 plt.tight_layout()
-plt.savefig("%s/TN_%s_%s_metapeak.png" % (DATA_DIR, args.prefix, args.classif_type), dpi=300)
+plt.savefig("./ATAC_TN_metapeak.png", dpi=300)
 
 plt.clf()
-plt.step(list(range(-500,500)), fn_atac_signal.sum(axis=0))
-plt.title('ATAC-seq signal meta-peak from all false negatives \n n=%d (%s / %s)' % (len(fn_atac_signal), args.prefix, args.classif_type))
+plt.step(list(range(-500,500)), np.divide(fn_atac_signal.sum(axis=0), len(fn_atac_signal)))
+plt.title('ATAC-seq signal meta-peak from all false negatives \n n=%d' % len(fn_atac_signal))
 plt.xlabel('Nucleotide position from midpoint')
-plt.ylabel('Total # normalized reads')
+plt.ylabel('Total normalized number of reads')
+plt.ylim((0,0.23))
+plt.text(400, 0.2, "FN", horizontalalignment='left', size='xx-large', color='black', weight='bold')
 plt.tight_layout()
-plt.savefig("%s/FN_%s_%s_metapeak.png" % (DATA_DIR, args.prefix, args.classif_type), dpi=300)
+plt.savefig("./ATAC_FN_metapeak.png", dpi=300)
 
